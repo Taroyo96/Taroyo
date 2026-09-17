@@ -1,0 +1,9 @@
+#Taroyo private/local data
+chat_memory.json
+user_memory.json
+memory.txt
+taroyo.db
+
+#Local development files
+.venv
+.idea
