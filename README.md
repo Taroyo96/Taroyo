@@ -3,8 +3,20 @@
 Taroyo is a personal offline AI assistant and homework management system built in Python.
 
 I started Taroyo as a way to experiment with local AI while solving a problem I had as a college student: keeping track of assignments, deadlines, and information across multiple classes without constantly switching between different pages and systems.
+## v1.1
 
-## Current Version: v1.0
+### New Features
+- Natural-language homework entry
+- Class alias recognition
+- Assignment type recognition
+- Dynamic date and weekday parsing
+- Confirmation before saving assignments
+
+### Architecture Improvements
+- Python now validates deterministic information
+- Qwen handles natural-language interpretation
+- SQLite remains the source of stored homework data
+## v1.0
 
 Taroyo currently functions as a persistent homework manager with a conversational interface.
 
