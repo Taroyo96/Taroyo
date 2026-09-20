@@ -1,10 +1,193 @@
 import os
 import json
+from turtledemo.clock import current_day
+
 import ollama
 import sqlite3
 from database import setup_database
 from pydantic import validate_email
 from database import (add_assigment, get_assignments,complete_assignment,delete_assignment)
+from datetime import datetime, timedelta
+def looks_like_homework_entry(message):
+    has_class = find_class(message) is not None
+    has_assignment = find_assignment_type(message) is not None
+    has_date= find_due_text(message) is not None
+
+    if message.strip().endswith("?"):
+        return False
+    return has_date and (has_class or has_assignment)
+def get_current_time():
+    return datetime.now()
+def parse_due_date(due_text):
+    today = get_current_time().date()
+    due_text = due_text.lower().strip()
+
+    #Today
+    if due_text == "today":
+        return today.isoformat()
+
+    #Tomorrow
+    if due_text == "tomorrow":
+        return (today + timedelta(days=1)).isoformat()
+
+    #Weekdays
+    weekdays={
+        "monday":0,
+        "tuesday":1,
+        "wednesday":2,
+        "thursday":3,
+        "friday":4,
+        "saturday":5,
+        "sunday":6,
+    }
+    if due_text in weekdays:
+        target_day = weekdays[due_text]
+        current_day = today.weekday()
+
+        days_ahead= (target_day - current_day)%7
+
+        if days_ahead == 0:
+            days_ahead=7
+        return (today + timedelta(days=days_ahead)).isoformat()
+        return None
+    if due_text== "today":
+        return today.isoformat()
+
+    if due_text=="tomorrow":
+        return (today + timedelta (days=1)).isoformat()
+        return None
+CLASS_ALIASES= {
+    "english":"English",
+    "philosophy":"Philsophy",
+    "network concepts": "Network Concepts",
+    "networking": "Network Concepts",
+    "network": "Network Concepts"
+}
+
+def find_class(message):
+    message_lower = message.casefold()
+
+    for alias,class_name in CLASS_ALIASES.items():
+        if alias in message_lower:
+            return class_name
+    return None
+    if "networking" in message_lower or "network" in message_lower:
+        return "Network Concepts"
+    return None
+
+def find_assignment_type(message):
+    message_lower=message.lower()
+    assignment_types = [
+        "quiz",
+        "test",
+        "exam",
+        "essay",
+        "rough draft",
+        "discussion post",
+        "notes",
+        "homework",
+        "project"
+    ]
+    for assignment_type in assignment_types:
+        if assignment_type in message_lower:
+            return  assignment_type.title()
+    return None
+
+def find_due_text(message):
+    message_lower= message.lower()
+    date_words = [
+        "today",
+        "tomorrow",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday"
+    ]
+    for date_word in date_words:
+        if date_word in message_lower:
+            return date_word
+    return None
+
+def parse_homework(message):
+    current_time = get_current_time()
+    response = ollama.chat(
+        model="qwen2.5:0.5b-instruct",
+        messages=[
+            {
+                "role":"system",
+                "content":(
+                    "Extract homework information from the user's message."
+                    f"The current data and time is {current_time}."
+                    "class_name means the COURSE or SCHOOL SUBJECT the assignment belongs to."
+                    "Examples of class names: English,Philosophy,Networking,Math."
+                    "assignment_name means the WORK the student needs to complete."
+                    "Examples:Classification Essay, Chapter 3 Quiz,Network Notes,Discussion Post."
+                    "Preserve the user's wording when possible"
+                    "Do not guess missing information"
+                    "Return ONLY vaild JSON in this format."
+                    '("class_name":null,"assignment_name":null,"due_date":null)'
+                    "For due_date,return the user's date expression exactly as started."
+                    'Examples:"tomorrow","Friday","September 25".'
+                    "Do not calculate the calendar date yourself."
+
+                )
+
+
+
+            },
+            {
+                "role":"user",
+                "content":message
+            }
+        ]
+    )
+    content = response ["message"]["content"]
+    content = content.replace("json","").replace("","").strip()
+    data = json.loads(content)
+    detected_class = find_class(message)
+
+    if detected_class is not None:
+        data["class_name"]= detected_class
+    detected_type= find_assignment_type(message)
+    if detected_type is not None:
+        data["assignment_name"]=detected_type
+    detected_due= find_due_text(message)
+
+    if detected_due is not None:
+        data["due_date"]=  parse_due_date(detected_due)
+    elif data.get("due_date")is not None:
+        data["due_date"] = parse_due_date(data["due_date"])
+    else:
+        data["due_date"]= None
+    return data
+def confirm_and_add_homework(message):
+    data = parse_homework(message)
+
+    class_name = data.get("class_name")
+    assignment_name=data.get("assignment_name")
+    due_date = data.get("due_date")
+
+    print()
+    print("Taroyo understood:")
+    print("Class:", class_name)
+    print("Assignment:",assignment_name)
+    print("Due:",due_date)
+
+    confirm = input("Add this assigment? (y/n):").strip().lower()
+
+    if confirm == "y":
+        add_assigment(
+            class_name,
+            assignment_name,
+            due_date
+        )
+        print("Taroyo:Assignment added.")
+    else:
+        print("Taroyo:Assignment not added.")
+
 
 if os.path.exists("memory.txt"):
     with open("memory.txt", "r") as file:
@@ -59,6 +242,7 @@ for key, value in user_memory.items():
     for key, value in memory_rows:
         user_memory[key] = value
 setup_database()
+
 while True:
     message = input ("You:").strip()
     if message.lower().startswith("add homework"):
@@ -155,6 +339,9 @@ while True:
                 memory_answered = True
                 break
     if memory_answered:
+        continue
+    if looks_like_homework_entry(message):
+        confirm_and_add_homework(message)
         continue
 
     if not message.endswith("?"):
